@@ -1,9 +1,16 @@
-const CACHE_NAME = 'app-shell-v1';
-const RUNTIME_CACHE = 'runtime-v1';
+//  VERSIONADO Y NOMBRES
 
+const VERSION = 'v3';
+const STATIC_CACHE   = `static-${VERSION}`;   
+const RUNTIME_CACHE  = `runtime-${VERSION}`;  
+const IMAGE_CACHE    = `images-${VERSION}`;   
+const OFFLINE_URL    = '/offline.html';
+
+// APP SHELL PRECACHE
 const APP_SHELL = [
-  '/',                     
+  '/',                    
   '/index.html',
+  '/offline.html',        
   '/manifest.webmanifest',
   '/icons/icon-192.png',
   '/icons/icon-512.png'
@@ -11,58 +18,111 @@ const APP_SHELL = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    caches.open(STATIC_CACHE).then((cache) => cache.addAll(APP_SHELL))
   );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => {
-        if (k !== CACHE_NAME && k !== RUNTIME_CACHE) return caches.delete(k);
-      }))
-    )
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => {
+      if (![STATIC_CACHE, RUNTIME_CACHE, IMAGE_CACHE].includes(k)) {
+        return caches.delete(k);
+      }
+    }));
+  })());
   self.clients.claim();
 });
 
+function cacheFirst(req, cacheName = STATIC_CACHE) {
+  return caches.match(req).then((hit) => {
+    if (hit) return hit;
+    return fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(cacheName).then((c) => c.put(req, copy));
+      return res;
+    });
+  });
+}
+
+function staleWhileRevalidate(req, cacheName) {
+  return caches.match(req).then((cached) => {
+    const fetchPromise = fetch(req).then((res) => {
+      const copy = res.clone();
+      caches.open(cacheName).then((c) => c.put(req, copy));
+      return res;
+    }).catch(() => cached);
+    return cached || fetchPromise;
+  });
+}
+
+function networkFirst(req, cacheName, fallbackResponse) {
+  return fetch(req).then((res) => {
+    const copy = res.clone();
+    caches.open(cacheName).then((c) => c.put(req, copy));
+    return res;
+  }).catch(async () => {
+    const cached = await caches.match(req);
+    return cached || fallbackResponse || Response.error();
+  });
+}
+
+const API_HOSTS = [
+  'jsonplaceholder.typicode.com'
+];
+
+function isAPI(url) {
+  return url.origin !== self.location.origin
+    ? API_HOSTS.includes(url.hostname)
+    : url.pathname.startsWith('/api/');
+}
+
+// FETCH
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  const url = new URL(req.url);
 
+  if (req.method !== 'GET') return;
+
+  // Página Network-first con fallback a offline.html
   if (req.mode === 'navigate') {
     event.respondWith(
-      fetch(req)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then((c) => c.put('/index.html', copy));
-          return res;
-        })
-        .catch(() => caches.match('/index.html'))
+      networkFirst(req, STATIC_CACHE, caches.match(OFFLINE_URL))
     );
     return;
   }
 
-  const url = new URL(req.url);
-  const isStatic =
-    req.destination === 'script' ||
-    req.destination === 'style' ||
-    req.destination === 'image' ||
-    req.destination === 'font' ||
-    req.destination === 'manifest';
-
-  if (isStatic || url.pathname.startsWith('/icons/')) {
-    event.respondWith(
-      caches.match(req).then((cached) => {
-        const fetchPromise = fetch(req).then((netRes) => {
-          const copy = netRes.clone();
-          caches.open(RUNTIME_CACHE).then((c) => c.put(req, copy));
-          return netRes;
-        }).catch(() => cached);
-        return cached || fetchPromise;
-      })
-    );
+  // App Shell cache-first
+  if (APP_SHELL.includes(url.pathname)) {
+    event.respondWith(cacheFirst(req, STATIC_CACHE));
+    return;
   }
+
+  // APIs network-first con caché dinámico
+  if (isAPI(url)) {
+    event.respondWith(networkFirst(req, RUNTIME_CACHE));
+    return;
+  }
+
+  //  Imágenes stale-while-revalidate
+  if (req.destination === 'image') {
+    event.respondWith(staleWhileRevalidate(req, IMAGE_CACHE));
+    return;
+  }
+
+  // Estáticos JS/CSS/fonts/manifest
+  if (
+    req.destination === 'script' ||
+    req.destination === 'style'  ||
+    req.destination === 'font'   ||
+    req.destination === 'manifest'
+  ) {
+    event.respondWith(staleWhileRevalidate(req, RUNTIME_CACHE));
+    return;
+  }
+
+  event.respondWith(staleWhileRevalidate(req, RUNTIME_CACHE));
 });
 
 const DB_NAME = 'pwa-db';
@@ -128,10 +188,8 @@ async function sendToServer(entries) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: e.text, createdAt: e.createdAt })
       });
-      if (res.ok) {
-        syncedIds.push(e.id);
-      }
-    } catch (err) {
+      if (res.ok) syncedIds.push(e.id);
+    } catch (_) {
     }
   }
   return syncedIds;
@@ -149,14 +207,14 @@ async function syncEntries() {
 
   const syncedIds = await sendToServer(pending);
   await markAsSynced(syncedIds);
-  
+
   if (syncedIds.length) {
     const clientsList = await self.clients.matchAll({ includeUncontrolled: true, type: 'window' });
     clientsList.forEach((c) => c.postMessage({ type: 'synced', count: syncedIds.length }));
   }
 
-  const stillPending = (await getPendingEntries()).length;
-  if (stillPending && 'sync' in self.registration) {
+  const still = (await getPendingEntries()).length;
+  if (still && 'sync' in self.registration) {
     try { await self.registration.sync.register('sync-entries'); } catch {}
   }
 }
@@ -165,4 +223,42 @@ self.addEventListener('message', async (ev) => {
   if (ev.data === 'try-sync-now') {
     await syncEntries();
   }
+});
+
+// Eventos push
+
+self.addEventListener('push', (event) => {
+  let data = {};
+  try {
+    data = event.data ? event.data.json() : {};
+  } catch (_) {
+    data = { title: 'PWA', body: event.data ? event.data.text() : 'Mensaje' };
+  }
+
+  const title = data.title || 'Notificación';
+  const options = {
+    body: data.body || 'Tienes un nuevo mensaje',
+    icon: '/icons/icon-192.png',
+    badge: '/icons/icon-192.png',
+    data: {
+      url: data.url || '/',
+    },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const urlToOpen = event.notification?.data?.url || '/';
+
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const had = allClients.find((client) => new URL(client.url).pathname === urlToOpen);
+    if (had) return had.focus();
+    return self.clients.openWindow(urlToOpen);
+  })());
+});
+
+self.addEventListener('pushsubscriptionchange', (event) => {
 });

@@ -22,3 +22,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Web Push / secretos locales
+vapid.json
+subscription.json

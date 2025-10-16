@@ -3,6 +3,7 @@ import OfflineBanner from './components/OfflineBanner';
 import EntryForm from './components/EntryForm';
 import EntryList from './components/EntryList';
 import './index.css';
+import PushDemo from './components/PushDemo';
 
 export default function App() {
   const [reload, setReload] = useState(0);
@@ -39,6 +40,10 @@ export default function App() {
 
         <div key={reload}>
           <EntryList />
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <PushDemo />
         </div>
       </main>
     </>
