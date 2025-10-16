@@ -16,6 +16,14 @@ export default function EntryForm({ onAdded }: Props) {
     setSaving(true);
     try {
       await addEntry(value);
+
+      if (!navigator.onLine && 'serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg.sync) {
+          await reg.sync.register('sync-entries');
+        }
+      }
+
       setMsg(navigator.onLine ? 'Guardado local (pendiente de sync).' : 'Sin conexión: guardado local.');
       setText('');
       onAdded();
