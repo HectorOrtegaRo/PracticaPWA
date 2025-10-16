@@ -1,35 +1,51 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect, useState } from 'react';
+import OfflineBanner from './components/OfflineBanner';
+import EntryForm from './components/EntryForm';
+import EntryList from './components/EntryList';
+import './index.css';
+import PushDemo from './components/PushDemo';
 
-function App() {
-  const [count, setCount] = useState(0)
+export default function App() {
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator)) return;
+    const onMsg = (ev: MessageEvent) => {
+      if (ev.data?.type === 'synced') {
+        setReload((x) => x + 1);
+      }
+    };
+    navigator.serviceWorker.addEventListener('message', onMsg as any);
+    return () => navigator.serviceWorker.removeEventListener('message', onMsg as any);
+  }, []);
+
+  useEffect(() => {
+    const onOnline = () => {
+      if (navigator.serviceWorker?.controller) {
+        navigator.serviceWorker.controller.postMessage('try-sync-now');
+      }
+    };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
 
   return (
     <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
-}
+      <OfflineBanner />
+      <main style={{ maxWidth: 760, margin: '0 auto', padding: '20px' }}>
+        <h1>My PWA — Hector Ortega</h1>
+        <p>Guardado de entradas sin conexión. Se listan desde IndexedDB al recargar.</p>
 
-export default App
+        <EntryForm onAdded={() => setReload((x) => x + 1)} />
+
+        <div key={reload}>
+          <EntryList />
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <PushDemo />
+        </div>
+      </main>
+    </>
+  );
+}
