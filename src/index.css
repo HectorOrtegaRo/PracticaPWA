@@ -66,3 +66,33 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,.05);
+}
+.card h2 {
+  margin: 0 0 10px;
+}
+.row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+}
+textarea { width: 100%; resize: vertical; padding: 10px; border-radius: 8px; border: 1px solid #e5e7eb; }
+button {
+  background: #0ea5e9; color: #fff; border: 0; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: not-allowed; }
+.hint { font-size: .9rem; color: #64748b; }
+.msg { margin-top: 8px; color: #16a34a; }
+
+.list { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+.list li { border: 1px dashed #e5e7eb; border-radius: 10px; padding: 10px; }
+.meta { display: flex; gap: 10px; align-items: center; margin-bottom: 4px; font-size: .9rem; color: #64748b; }
+.badge { padding: 2px 8px; border-radius: 999px; background: #e5e7eb; color: #111827; text-transform: uppercase; font-size: .7rem; }
+.badge.pending { background: #fde68a; }
+.badge.synced { background: #bbf7d0; }
